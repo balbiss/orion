@@ -62,6 +62,10 @@ _APP_ALIASES: dict[str, dict[str, str]] = {
     "steam":              {"Windows": "steam",                   "Darwin": "Steam",                "Linux": "steam"},
     "epic":               {"Windows": "EpicGamesLauncher",       "Darwin": "Epic Games Launcher",  "Linux": "legendary"},
     "epic games":         {"Windows": "EpicGamesLauncher",       "Darwin": "Epic Games Launcher",  "Linux": "legendary"},
+    "camera":             {"Windows": "microsoft.windows.camera:", "Darwin": "Photo Booth",         "Linux": "cheese"},
+    "webcam":             {"Windows": "microsoft.windows.camera:", "Darwin": "Photo Booth",         "Linux": "cheese"},
+    "câmera":             {"Windows": "microsoft.windows.camera:", "Darwin": "Photo Booth",         "Linux": "cheese"},
+    "câmera do windows":  {"Windows": "microsoft.windows.camera:", "Darwin": "Photo Booth",         "Linux": "cheese"},
 }
 
 

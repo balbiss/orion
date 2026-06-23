@@ -1,22 +1,22 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JARVIS Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ORION Dashboard</title>
   <script src="/static/crypto.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:      #07090f;
-      --surface: rgba(255,255,255,0.04);
-      --border:  rgba(255,255,255,0.07);
-      --accent:  #6366f1;
-      --adim:    rgba(99,102,241,0.14);
-      --text:    #dde3ed;
-      --muted:   #5e6a7e;
-      --green:   #22c55e;
-      --gdim:    rgba(34,197,94,0.14);
+      --bg:      #05000f;
+      --surface: rgba(168,85,247,0.06);
+      --border:  rgba(168,85,247,0.15);
+      --accent:  #a855f7;
+      --adim:    rgba(168,85,247,0.14);
+      --text:    #e9d5ff;
+      --muted:   #6d28d9;
+      --green:   #34d399;
+      --gdim:    rgba(52,211,153,0.14);
     }
     html, body {
       height: 100%; background: var(--bg); color: var(--text);
@@ -30,7 +30,7 @@
       padding: 12px 16px; border-bottom: 1px solid var(--border);
       background: rgba(7,9,15,0.95);
     }
-    .logo { font-size: 15px; font-weight: 700; letter-spacing: 6px; }
+    .logo { font-size: 16px; font-weight: 700; letter-spacing: 4px; }
     .logo em { color: var(--accent); font-style: normal; }
     .pill {
       display: flex; align-items: center; gap: 6px; padding: 4px 11px;
@@ -136,20 +136,20 @@
 <body>
   <div id="toast"></div>
   <header>
-    <div class="logo"><em>J</em>ARVIS</div>
-    <div class="pill" id="pill"><span class="dot"></span><span id="st">Connecting</span></div>
+    <div class="logo"><em>O</em>RION</div>
+    <div class="pill" id="pill"><span class="dot"></span><span id="st">Conectando</span></div>
     <div class="enc-badge" id="enc">AES-256</div>
     <div class="spacer"></div>
     <div class="url">__IP__:__PORT__</div>
   </header>
   <main id="feed"></main>
   <footer>
-    <input id="inp" placeholder="Send a command to JARVIS…" autocomplete="off">
-    <label class="btn-attach" for="file-inp" title="Send file">📎</label>
+    <input id="inp" placeholder="Envie um comando ao ORION…" autocomplete="off">
+    <label class="btn-attach" for="file-inp" title="Enviar arquivo">📎</label>
     <input type="file" id="file-inp" multiple accept="*/*" style="display:none">
-    <button id="mic-btn" onclick="doMic()" title="Voice command">🎤</button>
-    <button class="btn btn-wake" id="wake" onclick="doWake()">WAKE</button>
-    <button class="btn btn-send" onclick="doSend()">SEND</button>
+    <button id="mic-btn" onclick="doMic()" title="Comando de voz">🎤</button>
+    <button class="btn btn-wake" id="wake" onclick="doWake()">ATIVAR</button>
+    <button class="btn btn-send" onclick="doSend()">ENVIAR</button>
   </footer>
 
   <script>
@@ -210,23 +210,23 @@
     const _wsUrl   = `${_wsProto}://${location.host}/ws?token=${encodeURIComponent(_authToken)}`;
     const ws       = new WebSocket(_wsUrl);
 
-    ws.onopen    = () => { sys('Remote session active.'); toast('Connected to JARVIS'); };
-    ws.onclose   = () => sys('Connection lost — refresh to reconnect.');
-    ws.onerror   = () => sys('Connection error.');
+    ws.onopen    = () => { sys('Sessão remota ativa.'); toast('Conectado ao ORION'); };
+    ws.onclose   = () => sys('Conexão perdida — atualize para reconectar.');
+    ws.onerror   = () => sys('Erro de conexão.');
     ws.onmessage = (e) => {
       const m = JSON.parse(e.data);
       if (m.type === 'log')           append(m.speaker, m.text);
       if (m.type === 'status')        setStatus(m.state);
-      if (m.type === 'wake')          sys('Wake word detected — connecting…');
+      if (m.type === 'wake')          sys('ORION ativado — conectando…');
       if (m.type === 'sys')           sys(m.text);
       if (m.type === 'file_received') _onFileReceived(m);
     };
 
     function setStatus(s) {
       if (s === 'active') {
-        pill.className = 'pill on'; stTxt.textContent = 'Active'; wake.classList.remove('show');
+        pill.className = 'pill on'; stTxt.textContent = 'Ativo'; wake.classList.remove('show');
       } else {
-        pill.className = 'pill'; stTxt.textContent = 'Sleeping'; wake.classList.add('show');
+        pill.className = 'pill'; stTxt.textContent = 'Inativo'; wake.classList.add('show');
       }
     }
 
@@ -234,10 +234,10 @@
       const d = document.createElement('div');
       if (speaker === 'jarvis') {
         d.className = 'msg msg-j';
-        d.innerHTML = `<div class="lbl">Jarvis</div>${esc(text)}`;
+        d.innerHTML = `<div class="lbl">ORION</div>${esc(text)}`;
       } else {
         d.className = 'msg msg-u';
-        d.innerHTML = `<div class="lbl">You</div>${esc(text)}`;
+        d.innerHTML = `<div class="lbl">Você</div>${esc(text)}`;
       }
       feed.appendChild(d);
       feed.scrollTop = feed.scrollHeight;
@@ -286,7 +286,7 @@
       card.innerHTML = `
         <div class="fc-icon">${_fileIcon(file.name)}</div>
         <div class="fc-meta">
-          <div class="fc-lbl">Sending</div>
+          <div class="fc-lbl">Enviando</div>
           <div class="fc-name">${esc(file.name)}</div>
           <div class="fc-size">${_fmtSize(file.size)}</div>
           <div class="fc-bar-wrap"><div class="fc-bar" id="${id}_bar"></div></div>
@@ -320,10 +320,10 @@
           const dlUrl = `/uploads/${encodeURIComponent(savedName)}?token=${encodeURIComponent(_authToken)}`;
           if (bar)  { bar.style.width = '100%'; bar.style.background = 'var(--green)'; }
           if (st)   { st.textContent = '✓'; st.className = 'fc-status done'; }
-          if (lbl)  lbl.textContent = 'Sent';
+          if (lbl)  lbl.textContent = 'Enviado';
           if (meta) meta.insertAdjacentHTML('beforeend',
-            `<a class="fc-dl" href="${dlUrl}" download="${esc(savedName)}">⬇ Download back</a>`);
-          toast('File sent!');
+            `<a class="fc-dl" href="${dlUrl}" download="${esc(savedName)}">⬇ Baixar</a>`);
+          toast('Arquivo enviado!');
         } else {
           let errMsg = 'Upload failed';
           try { errMsg = JSON.parse(xhr.responseText).error || errMsg; } catch {}
@@ -337,7 +337,7 @@
         const st  = document.getElementById(`${id}_st`);
         const lbl = card.querySelector('.fc-lbl');
         if (st)  { st.textContent = 'ERR'; st.className = 'fc-status err'; }
-        if (lbl) lbl.textContent = 'Connection error';
+        if (lbl) lbl.textContent = 'Erro de conexão';
       };
 
       const fd = new FormData();
@@ -353,16 +353,16 @@
       card.innerHTML = `
         <div class="fc-icon">${_fileIcon(m.name)}</div>
         <div class="fc-meta">
-          <div class="fc-lbl">Received</div>
+          <div class="fc-lbl">Recebido</div>
           <div class="fc-name">${esc(m.name)}</div>
           <div class="fc-size">${_fmtSize(m.size)}</div>
-          <a class="fc-dl" href="${dlUrl}" download="${esc(m.name)}">⬇ Download</a>
+          <a class="fc-dl" href="${dlUrl}" download="${esc(m.name)}">⬇ Baixar</a>
         </div>
         <div class="fc-status done">✓</div>
       `;
       feed.appendChild(card);
       feed.scrollTop = feed.scrollHeight;
-      toast('File received on computer!');
+      toast('Arquivo recebido no computador!');
     }
 
     // File input change handler
@@ -388,7 +388,7 @@
     }
 
     function doWake() {
-      sys('Sending wake signal…');
+      sys('Enviando sinal de ativação…');
       _authFetch('/api/wake', { method: 'POST' });
     }
 
@@ -414,7 +414,7 @@
 
     function _micIdle() {
       micBtn.innerHTML = '🎤';
-      micBtn.title     = 'Voice — tap to speak';
+      micBtn.title     = 'Voz — toque para falar';
       micBtn.classList.remove('recording');
     }
 
@@ -476,8 +476,8 @@
         });
       } catch (e) {
         sys(e.name === 'NotAllowedError'
-          ? 'Microphone denied — tap the address bar lock and allow microphone.'
-          : 'Mic error: ' + e.message);
+          ? 'Microfone bloqueado — toque no cadeado da barra de endereço e permita o microfone.'
+          : 'Erro no microfone: ' + e.message);
         return;
       }
 
@@ -530,14 +530,14 @@
         }
 
         micBtn.innerHTML = '⏹';
-        micBtn.title     = 'Tap to stop';
+        micBtn.title     = 'Toque para parar';
         micBtn.classList.add('recording');
-        sys('Voice live — speak now');
-        toast('🎤 Live');
+        sys('Voz ativa — fale agora');
+        toast('🎤 Ao vivo');
       };
 
       ws.onclose = () => { _stopVoice(); };
-      ws.onerror = () => { sys('Voice connection failed.'); _stopVoice(); };
+      ws.onerror = () => { sys('Falha na conexão de voz.'); _stopVoice(); };
 
       _voiceWs  = ws;
       _audioCtx = ctx;

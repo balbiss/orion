@@ -19,6 +19,8 @@ from actions.file_processor import file_processor
 from actions.flight_finder     import flight_finder
 from actions.open_app          import open_app
 from actions.weather_report    import weather_action
+from actions.cotacao           import cotacao
+from actions.consulta_cep      import consulta_cep
 from actions.send_message      import send_message
 from actions.reminder          import reminder
 from actions.computer_settings import computer_settings
@@ -32,6 +34,7 @@ from actions.dev_agent         import dev_agent
 from actions.web_search        import web_search as web_search_action
 from actions.computer_control  import computer_control
 from actions.game_updater      import game_updater
+from actions.quick_notes       import quick_notes
 
 
 def get_base_dir():
@@ -59,7 +62,7 @@ def _load_system_prompt() -> str:
         return PROMPT_PATH.read_text(encoding="utf-8")
     except Exception:
         return (
-            "You are JARVIS, Tony Stark's AI assistant. "
+            "You are ORION, an advanced AI assistant. "
             "Be concise, direct, and always use the provided tools to complete tasks. "
             "Never simulate or guess results — always call the appropriate tool."
         )
@@ -76,8 +79,11 @@ TOOL_DECLARATIONS = [
         "name": "open_app",
         "description": (
             "Opens any application on the computer. "
-            "Use this whenever the user asks to open, launch, or start any app, "
-            "website, or program. Always call this tool — never just say you opened it."
+            "Use this whenever the user asks to open, launch, or start any app, website, or program. "
+            "CRITICAL: When user says 'ligar câmera', 'abrir câmera', 'ligar webcam', 'open camera' — "
+            "call this with app_name='Camera' to open the Windows Camera app, then STOP. "
+            "Do NOT also call screen_process after opening Camera — they conflict and the camera image will be black."
+            "Always call this tool — never just say you opened it."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -106,13 +112,52 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "weather_report",
-        "description": "Gives the weather report to user",
+        "description": (
+            "Gives the weather report to user. "
+            "ALWAYS use THIS tool for weather — NEVER use browser_control to search for weather. "
+            "This tool opens the result safely without disturbing any active YouTube session."
+        ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
                 "city": {"type": "STRING", "description": "City name"}
             },
             "required": ["city"]
+        }
+    },
+    {
+        "name": "cotacao",
+        "description": (
+            "Retorna cotações em tempo real de moedas e criptomoedas em reais (BRL). "
+            "Use quando o usuário perguntar sobre dólar, euro, bitcoin, ethereum, libra, iene, etc. "
+            "Sem moedas especificadas, retorna dólar, euro e bitcoin por padrão."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "moedas": {
+                    "type": "ARRAY",
+                    "items": {"type": "STRING"},
+                    "description": "Lista de moedas: dólar, euro, bitcoin, ethereum, libra, iene, peso. Deixe vazio para padrão."
+                }
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "consulta_cep",
+        "description": (
+            "Consulta endereço por CEP (ViaCEP + CepAberto) e dados de estados/cidades brasileiras (IBGE). "
+            "Use para: 'qual o endereço do CEP 01310-100', 'quantas cidades tem SP', 'lista os estados'."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING",  "description": "cep | estado | estados"},
+                "cep":    {"type": "STRING",  "description": "CEP com ou sem traço (para action=cep)"},
+                "uf":     {"type": "STRING",  "description": "Sigla do estado ex: SP, RJ, MG (para action=estado)"},
+            },
+            "required": ["action"]
         }
     },
     {
@@ -130,7 +175,13 @@ TOOL_DECLARATIONS = [
     },
     {
         "name": "reminder",
-        "description": "Sets a timed reminder using Task Scheduler.",
+        "description": (
+            "Sets a one-time OS-level popup alarm using Windows Task Scheduler. "
+            "Use ONLY when the user asks for a simple alarm/reminder WITHOUT needing to search or list it later. "
+            "For appointments, meetings, or anything the user may want to query later "
+            "('tenho algo hoje?', 'quais meus compromissos?'), use quick_notes instead — "
+            "it saves searchable notes AND automatically sets the reminder."
+        ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
@@ -145,28 +196,52 @@ TOOL_DECLARATIONS = [
         "name": "youtube_video",
         "description": (
             "Controls YouTube. Use for: playing videos, summarizing a video's content, "
-            "getting video info, or showing trending videos."
+            "getting video info, showing trending videos, or controlling the YouTube PLAYER "
+            "(pause, resume, mute, close YouTube tab, skip forward/backward, "
+            "YouTube player volume up/down). "
+            "ALWAYS use this tool — NEVER computer_settings — when the user wants to "
+            "pause, stop, mute, resume, or change volume of a YouTube video. "
+            "When YouTube is playing, volume commands (volume_up, volume_down) go to THIS tool only."
         ),
         "parameters": {
             "type": "OBJECT",
             "properties": {
-                "action": {"type": "STRING", "description": "play | summarize | get_info | trending (default: play)"},
-                "query":  {"type": "STRING", "description": "Search query for play action"},
-                "save":   {"type": "BOOLEAN", "description": "Save summary to Notepad (summarize only)"},
-                "region": {"type": "STRING", "description": "Country code for trending e.g. TR, US"},
-                "url":    {"type": "STRING", "description": "Video URL for get_info action"},
+                "action":  {"type": "STRING", "description": "play | summarize | get_info | trending | control (default: play)"},
+                "query":   {"type": "STRING", "description": "Search query for play action"},
+                "save":    {"type": "BOOLEAN", "description": "Save summary to Notepad (summarize only)"},
+                "region":  {"type": "STRING", "description": "Country code for trending e.g. TR, US"},
+                "url":     {"type": "STRING", "description": "Video URL for get_info action"},
+                "command": {"type": "STRING", "description": "For action=control: pause | resume | toggle | mute | unmute | close | fullscreen | forward | backward | volume_up (YouTube player volume, NOT system) | volume_down (YouTube player volume, NOT system) | skip_ad (click Pular/Skip Ad button)"},
+                "browser": {"type": "STRING", "description": "Browser to use for play action: chrome | edge | firefox | brave (default: chrome)"},
             },
             "required": []
         }
     },
     {
+        "name": "live_camera",
+        "description": (
+            "Enable or disable live webcam streaming so ORION can see the user in real-time throughout the conversation. "
+            "Use when user says 'me veja ao vivo', 'liga câmera ao vivo', 'quero que você me veja', "
+            "'ativa câmera', 'desativa câmera', 'para de me ver'. "
+            "When enabled, ORION receives a webcam frame every 2 seconds and can see the user continuously."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING", "description": "enable | disable | status"}
+            },
+            "required": ["action"]
+        }
+    },
+    {
         "name": "screen_process",
         "description": (
-            "Captures and analyzes the screen or webcam image. "
-            "MUST be called when user asks what is on screen, what you see, "
-            "analyze my screen, look at camera, etc. "
-            "You have NO visual ability without this tool. "
-            "After calling this tool, stay SILENT — the vision module speaks directly."
+            "Captures and analyzes the screen or webcam image ONE TIME for ORION to describe. "
+            "Use ONLY when the user explicitly asks: what do you see, analyze my screen, "
+            "'o que você vê', 'o que está na tela', 'olha pela câmera e me diz...'. "
+            "Do NOT use when user says 'ligar câmera', 'abrir câmera' — use open_app instead. "
+            "For CONTINUOUS live camera, use live_camera tool instead. "
+            "After calling this tool, stay COMPLETELY SILENT — do NOT call it again."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -180,10 +255,12 @@ TOOL_DECLARATIONS = [
     {
         "name": "computer_settings",
         "description": (
-            "Controls the computer: volume, brightness, window management, keyboard shortcuts, "
+            "Controls the computer: SYSTEM volume, brightness, window management, keyboard shortcuts, "
             "typing text on screen, closing apps, fullscreen, dark mode, WiFi, restart, shutdown, "
             "scrolling, tab management, zoom, screenshots, lock screen, refresh/reload page. "
-            "Use for ANY single computer control command."
+            "IMPORTANT: Do NOT call this for volume when YouTube is playing — "
+            "use youtube_video with action=control command=volume_up/volume_down instead. "
+            "Only call this for system volume when the user explicitly says 'volume do sistema' or no media is playing."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -200,8 +277,12 @@ TOOL_DECLARATIONS = [
         "description": (
             "Controls any web browser. Use for: opening websites, searching the web, "
             "clicking elements, filling forms, scrolling, screenshots, navigation, any web-based task. "
-            "Always pass the 'browser' parameter when the user specifies a browser (e.g. 'open in Edge', "
-            "'use Firefox', 'open Chrome'). Multiple browsers can run simultaneously."
+            "CRITICAL RULES: "
+            "(1) When a YouTube video is currently playing in Chrome, NEVER use action=close, close_all, or go_to in Chrome — "
+            "this would kill the YouTube session. Instead open a new_tab for any other task, then close_tab when done. "
+            "(2) NEVER call action=close or action=close_all unless the user explicitly says 'close the browser' or 'close Chrome'. "
+            "(3) After finishing a web search or task, use close_tab (not close/close_all) to clean up. "
+            "Always pass the 'browser' parameter when the user specifies a browser. Multiple browsers can run simultaneously."
         ),
         "parameters": {
             "type": "OBJECT",
@@ -434,6 +515,29 @@ TOOL_DECLARATIONS = [
     }
 },
     {
+        "name": "quick_notes",
+        "description": (
+            "PRIMARY tool for ALL notes and appointments. "
+            "ALWAYS use this (not reminder) when the user wants to save a meeting, appointment, task, or note — "
+            "even when a date and time are provided. It saves searchable notes AND sets up the reminder automatically. "
+            "Also use when the user asks: 'tenho algo hoje?', 'quais meus compromissos?', "
+            "'tem alguma reunião marcada?', 'anota isso', 'lembra de mim de...', 'o que tenho essa semana?'. "
+            "Never use 'reminder' for appointments — use this tool. "
+            "To DELETE a note: call action=delete with query=<note name>. NEVER ask the user for an ID."
+        ),
+        "parameters": {
+            "type": "OBJECT",
+            "properties": {
+                "action": {"type": "STRING",  "description": "add | today | upcoming | search | delete | clear_old"},
+                "text":   {"type": "STRING",  "description": "Note or appointment text (for add)"},
+                "date":   {"type": "STRING",  "description": "Date in YYYY-MM-DD format (for add, optional — defaults to today)"},
+                "time":   {"type": "STRING",  "description": "Time in HH:MM format (for add, optional — triggers notification)"},
+                "query":  {"type": "STRING",  "description": "Search term (for search) OR note name/text to delete (for delete). ALWAYS use query to delete — NEVER ask the user for an ID."},
+            },
+            "required": ["action"]
+        }
+    },
+    {
         "name": "save_memory",
         "description": (
             "Save an important personal fact about the user to long-term memory. "
@@ -479,6 +583,7 @@ class JarvisLive:
         self._is_speaking   = False
         self._speaking_lock = threading.Lock()
         self._phone_active  = False   # True while phone mic is streaming; pauses PC mic
+        self._camera_active = False   # True while live camera streaming is enabled
         self.ui.on_text_command  = self._on_text_command
         self.ui.on_remote_clicked = self._make_remote_key
         self._turn_done_event: asyncio.Event | None = None
@@ -572,7 +677,7 @@ class JarvisLive:
         name = fc.name
         args = dict(fc.args or {})
 
-        print(f"[JARVIS] 🔧 {name}  {args}")
+        print(f"[ORION] 🔧 {name}  {args}")
         self.ui.set_state("THINKING")
 
         if name == "save_memory":
@@ -599,7 +704,15 @@ class JarvisLive:
 
             elif name == "weather_report":
                 r = await loop.run_in_executor(None, lambda: weather_action(parameters=args, player=self.ui))
-                result = r or "Weather delivered."
+                result = r or "Clima obtido."
+
+            elif name == "cotacao":
+                r = await loop.run_in_executor(None, lambda: cotacao(parameters=args, player=self.ui))
+                result = r or "Done."
+
+            elif name == "consulta_cep":
+                r = await loop.run_in_executor(None, lambda: consulta_cep(parameters=args, player=self.ui))
+                result = r or "Done."
 
             elif name == "browser_control":
                 r = await loop.run_in_executor(None, lambda: browser_control(parameters=args, player=self.ui))
@@ -620,6 +733,18 @@ class JarvisLive:
             elif name == "youtube_video":
                 r = await loop.run_in_executor(None, lambda: youtube_video(parameters=args, response=None, player=self.ui))
                 result = r or "Done."
+
+            elif name == "live_camera":
+                action = args.get("action", "enable").lower().strip()
+                if action == "enable":
+                    self._camera_active = True
+                    result = "Live camera enabled. I can see you now, sir — frames every 2 seconds."
+                elif action == "disable":
+                    self._camera_active = False
+                    result = "Live camera disabled."
+                else:
+                    state = "active" if self._camera_active else "inactive"
+                    result = f"Live camera is {state}."
 
             elif name == "screen_process":
                 threading.Thread(
@@ -666,6 +791,10 @@ class JarvisLive:
                 r = await loop.run_in_executor(None, lambda: game_updater(parameters=args, player=self.ui, speak=self.speak))
                 result = r or "Done."
 
+            elif name == "quick_notes":
+                r = await loop.run_in_executor(None, lambda: quick_notes(parameters=args, player=self.ui))
+                result = r or "Done."
+
             elif name == "flight_finder":
                 r = await loop.run_in_executor(None, lambda: flight_finder(parameters=args, player=self.ui))
                 result = r or "Done."
@@ -690,7 +819,7 @@ class JarvisLive:
         if not self.ui.muted:
             self.ui.set_state("LISTENING")
 
-        print(f"[JARVIS] 📤 {name} → {str(result)[:80]}")
+        print(f"[ORION] 📤 {name} → {str(result)[:80]}")
         return types.FunctionResponse(
             id=fc.id, name=name,
             response={"result": result}
@@ -702,7 +831,7 @@ class JarvisLive:
             await self.session.send_realtime_input(media=msg)
 
     async def _listen_audio(self):
-        print("[JARVIS] 🎤 Mic started")
+        print("[ORION] 🎤 Mic started")
         loop = asyncio.get_event_loop()
 
         def callback(indata, frames, time_info, status):
@@ -723,15 +852,30 @@ class JarvisLive:
                 blocksize=CHUNK_SIZE,
                 callback=callback,
             ):
-                print("[JARVIS] 🎤 Mic stream open")
+                print("[ORION] 🎤 Mic stream open")
                 while True:
                     await asyncio.sleep(0.1)
         except Exception as e:
-            print(f"[JARVIS] ❌ Mic: {e}")
+            print(f"[ORION] ❌ Mic: {e}")
             raise
 
+    async def _stream_camera(self):
+        """Continuously sends webcam frames to Gemini when live camera is active."""
+        print("[ORION] Camera stream ready (standby)")
+        loop = asyncio.get_event_loop()
+        while True:
+            await asyncio.sleep(2.0)
+            if not self._camera_active or not self.out_queue:
+                continue
+            try:
+                from actions.screen_processor import _capture_camera
+                frame_bytes, _ = await loop.run_in_executor(None, _capture_camera)
+                self.out_queue.put_nowait({"data": frame_bytes, "mime_type": "image/jpeg"})
+            except Exception as e:
+                print(f"[Camera] Frame error: {e}")
+
     async def _receive_audio(self):
-        print("[JARVIS] 👂 Recv started")
+        print("[ORION] 👂 Recv started")
         out_buf, in_buf = [], []
 
         try:
@@ -785,19 +929,19 @@ class JarvisLive:
                     if response.tool_call:
                         fn_responses = []
                         for fc in response.tool_call.function_calls:
-                            print(f"[JARVIS] 📞 {fc.name}")
+                            print(f"[ORION] 📞 {fc.name}")
                             fr = await self._execute_tool(fc)
                             fn_responses.append(fr)
                         await self.session.send_tool_response(
                             function_responses=fn_responses
                         )
         except Exception as e:
-            print(f"[JARVIS] ❌ Recv: {e}")
+            print(f"[ORION] ❌ Recv: {e}")
             traceback.print_exc()
             raise
 
     async def _play_audio(self):
-        print("[JARVIS] 🔊 Play started")
+        print("[ORION] 🔊 Play started")
 
         stream = sd.RawOutputStream(
             samplerate=RECEIVE_SAMPLE_RATE,
@@ -826,7 +970,7 @@ class JarvisLive:
                 self.set_speaking(True)
                 await asyncio.to_thread(stream.write, chunk)
         except Exception as e:
-            print(f"[JARVIS] ❌ Play: {e}")
+            print(f"[ORION] ❌ Play: {e}")
             raise
         finally:
             self.set_speaking(False)
@@ -909,7 +1053,7 @@ class JarvisLive:
 
         while True:
             try:
-                print("[JARVIS] Connecting...")
+                print("[ORION] Connecting...")
                 self.ui.set_state("THINKING")
                 config = self._build_config()
 
@@ -922,22 +1066,23 @@ class JarvisLive:
                     self.out_queue        = asyncio.Queue(maxsize=200)
                     self._turn_done_event = asyncio.Event()
 
-                    print("[JARVIS] Connected.")
+                    print("[ORION] Connected.")
                     self.ui.set_state("LISTENING")
-                    self.ui.write_log("SYS: JARVIS online.")
+                    self.ui.write_log("SYS: ORION online.")
 
                     if self._dashboard:
                         await self._dashboard.broadcast({"type": "status", "state": "active"})
 
                     tg.create_task(self._send_realtime())
                     tg.create_task(self._listen_audio())
+                    tg.create_task(self._stream_camera())
                     tg.create_task(self._receive_audio())
                     tg.create_task(self._play_audio())
                     if self._dashboard:
                         tg.create_task(self._relay_phone_audio())
 
             except Exception as e:
-                print(f"[JARVIS] Error: {e}")
+                print(f"[ORION] Error: {e}")
                 traceback.print_exc()
             finally:
                 self.session = None
@@ -948,7 +1093,7 @@ class JarvisLive:
             if self._dashboard:
                 await self._dashboard.broadcast({"type": "status", "state": "sleeping"})
 
-            print("[JARVIS] Reconnecting in 3s...")
+            print("[ORION] Reconnecting in 3s...")
             await asyncio.sleep(3)
 
 def main():
@@ -957,6 +1102,8 @@ def main():
     def runner():
         ui.wait_for_api_key()
         jarvis = JarvisLive(ui)
+        from actions.quick_notes import set_speak_callback
+        set_speak_callback(jarvis.speak)
         try:
             asyncio.run(jarvis.run())
         except KeyboardInterrupt:

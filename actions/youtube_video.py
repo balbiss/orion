@@ -16,6 +16,12 @@ except ImportError:
     _PYAUTOGUI = False
 
 try:
+    import pygetwindow as gw
+    _PYGETWINDOW = True
+except ImportError:
+    _PYGETWINDOW = False
+
+try:
     import numpy as np
     _NUMPY = True
 except ImportError:
@@ -178,7 +184,7 @@ def _summarize_with_gemini(transcript: str, video_url: str) -> str:
         contents=f"Please summarize this YouTube video transcript:\n\n{truncated}",
         config=types.GenerateContentConfig(
             system_instruction=(
-                "You are JARVIS, an AI assistant. "
+                "You are ORION, an AI assistant. "
                 "Summarize YouTube video transcripts clearly and concisely. "
                 "Structure: 1-sentence overview, then 3-5 key points. "
                 "Be direct. Address the user as 'sir'. "
@@ -197,7 +203,7 @@ def _save_summary(content: str, video_url: str) -> str:
     filepath = desktop / filename
 
     header = (
-        f"JARVIS — YouTube Summary\n"
+        f"ORION — YouTube Summary\n"
         f"{'─' * 50}\n"
         f"URL    : {video_url}\n"
         f"Date   : {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
@@ -277,6 +283,162 @@ def _scrape_trending(region: str = "TR", max_results: int = 8) -> list[dict]:
         print(f"[YouTube] ⚠️ Trending scrape failed: {e}")
         return []
 
+def _focus_youtube_window() -> bool:
+    for attempt in range(3):
+        if is_windows():
+            try:
+                import win32gui
+                import win32con
+                import ctypes
+
+                found = []
+
+                def _cb(hwnd, _):
+                    if win32gui.IsWindowVisible(hwnd):
+                        if "youtube" in win32gui.GetWindowText(hwnd).lower():
+                            found.append(hwnd)
+
+                win32gui.EnumWindows(_cb, None)
+                if found:
+                    hwnd = found[0]
+                    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+                    # ALT key trick: bypass Windows foreground lock
+                    ctypes.windll.user32.keybd_event(0x12, 0, 0, 0)       # ALT down
+                    ctypes.windll.user32.keybd_event(0x12, 0, 0x0002, 0)  # ALT up
+                    win32gui.SetForegroundWindow(hwnd)
+                    time.sleep(0.5)
+                    return True
+            except Exception as e:
+                print(f"[YouTube] ⚠️ win32gui focus failed: {e}")
+
+        if _PYGETWINDOW:
+            for title in gw.getAllTitles():
+                if "youtube" in title.lower():
+                    wins = gw.getWindowsWithTitle(title)
+                    if wins:
+                        try:
+                            wins[0].activate()
+                            time.sleep(0.5)
+                            return True
+                        except Exception:
+                            pass
+
+        if attempt < 2:
+            time.sleep(0.8)
+
+    print("[YouTube] ⚠️ Could not find YouTube window to focus.")
+    return False
+
+
+def _skip_ad() -> str:
+    """Use Gemini vision to find and click the Skip Ad / Pular button."""
+    if not _PYAUTOGUI:
+        return "pyautogui not installed."
+    try:
+        import io
+        import re as _re
+        from google import genai as _genai
+        from google.genai import types as _gtypes
+
+        img = pyautogui.screenshot()
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        image_bytes = buf.getvalue()
+        w, h = pyautogui.size()
+
+        client = _genai.Client(api_key=_get_api_key())
+        prompt = (
+            f"Screen is {w}x{h} pixels. "
+            "Find the YouTube 'Skip Ad', 'Skip', 'Pular' or 'Pular anúncio' button. "
+            "Reply with ONLY 'x,y' pixel coordinates of the button center. "
+            "If not visible reply with exactly: NOT_FOUND"
+        )
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                _gtypes.Part.from_bytes(data=image_bytes, mime_type="image/png"),
+                prompt,
+            ],
+        )
+        text = (response.text or "").strip()
+        if "NOT_FOUND" in text.upper():
+            return "No skip ad button visible right now."
+
+        match = _re.search(r"(\d+)\s*,\s*(\d+)", text)
+        if match:
+            x, y = int(match.group(1)), int(match.group(2))
+            pyautogui.click(x, y)
+            return f"Skip ad clicked at ({x},{y})."
+
+        return "Could not determine skip button position."
+    except Exception as e:
+        return f"Skip ad failed: {e}"
+
+
+_YT_VIDEO = (
+    "document.querySelector('.html5-main-video')"
+    "||document.querySelector('#movie_player video')"
+    "||document.querySelector('video')"
+)
+
+_JS_COMMANDS = {
+    "pause":       f"var v={_YT_VIDEO};if(v)v.pause();'ok'",
+    "resume":      f"var v={_YT_VIDEO};if(v){{v.muted=false;v.play()}};'ok'",
+    "toggle":      f"var v={_YT_VIDEO};if(v){{v.paused?v.play():v.pause()}};'ok'",
+    "play":        f"var v={_YT_VIDEO};if(v){{v.muted=false;v.play()}};'ok'",
+    "mute":        f"var v={_YT_VIDEO};if(v)v.muted=true;'muted'",
+    "unmute":      f"var v={_YT_VIDEO};if(v)v.muted=false;'unmuted'",
+    "volume_up":   "var p=document.querySelector('#movie_player');if(p&&p.getVolume){var nv=Math.min(100,p.getVolume()+10);p.setVolume(nv);p.unMute&&p.unMute();nv}else{var v=document.querySelector('.html5-main-video')||document.querySelector('video');if(v){v.muted=false;v.volume=Math.min(1,v.volume+0.1)};v?v.volume:'no video'}",
+    "volume_down": "var p=document.querySelector('#movie_player');if(p&&p.getVolume){var nv=Math.max(0,p.getVolume()-10);p.setVolume(nv);nv}else{var v=document.querySelector('.html5-main-video')||document.querySelector('video');if(v)v.volume=Math.max(0,v.volume-0.1);v?v.volume:'no video'}",
+    "forward":     f"var v={_YT_VIDEO};if(v)v.currentTime+=10;'ok'",
+    "backward":    f"var v={_YT_VIDEO};if(v)v.currentTime-=10;'ok'",
+    "fullscreen":  "document.querySelector('.ytp-fullscreen-button')?.click();'ok'",
+    "skip_ad":     "(document.querySelector('.ytp-skip-ad-button')||document.querySelector('.ytp-ad-skip-button')||document.querySelector('[class*=\"skip\"]'))?.click();'ok'",
+}
+
+
+def _yt_js(js: str) -> str:
+    """Run JavaScript in the active Playwright browser session."""
+    try:
+        from actions.browser_control import _registry
+        sess = _registry.get()
+
+        async def _run():
+            page = await sess._get_page()
+            result = await page.evaluate(js)
+            return str(result) if result is not None else "ok"
+
+        return sess.run(_run())
+    except Exception as e:
+        return f"JS error: {e}"
+
+
+def _handle_control(parameters: dict, player) -> str:
+    cmd = (parameters.get("command") or "toggle").lower().strip()
+
+    if player:
+        player.write_log(f"[YouTube] Control: {cmd}")
+
+    if cmd == "close":
+        try:
+            from actions.browser_control import browser_control as _bc
+            return _bc(parameters={"action": "close_tab"}, player=player) or "YouTube tab closed."
+        except Exception as e:
+            return f"Close failed: {e}"
+
+    js = _JS_COMMANDS.get(cmd)
+    if not js:
+        return (
+            f"Unknown control command '{cmd}'. "
+            "Use: pause, resume, toggle, mute, unmute, skip_ad, close, "
+            "fullscreen, forward, backward, volume_up, volume_down."
+        )
+
+    result = _yt_js(js)
+    print(f"[YouTube] JS {cmd} → {result}")
+    return f"YouTube: {cmd}."
+
+
 def _handle_play(parameters: dict, player) -> str:
     query = parameters.get("query", "").strip()
     if not query:
@@ -289,19 +451,24 @@ def _handle_play(parameters: dict, player) -> str:
 
     video_url = _scrape_first_video_url(query)
 
-    if video_url:
-        print(f"[YouTube] ▶️ Opening: {video_url}")
-        _open_url(video_url)
-        return f"Playing: {query}"
+    if not video_url:
+        print(f"[YouTube] ⚠️ Scrape failed, using search page")
+        video_url = (
+            f"https://www.youtube.com/results"
+            f"?search_query={quote_plus(query)}"
+            f"&sp={_YT_VIDEO_FILTER}"
+        )
 
-    print(f"[YouTube] ⚠️ Scrape failed, opening filtered search page")
-    fallback_url = (
-        f"https://www.youtube.com/results"
-        f"?search_query={quote_plus(query)}"
-        f"&sp={_YT_VIDEO_FILTER}"
-    )
-    _open_url(fallback_url)
-    return f"Opened YouTube search for: {query} (manual selection required)"
+    browser = parameters.get("browser", "chrome").lower().strip() or "chrome"
+    print(f"[YouTube] ▶️ Opening via Playwright ({browser}): {video_url}")
+    try:
+        from actions.browser_control import browser_control as _bc
+        _bc(parameters={"action": "go_to", "url": video_url, "browser": browser}, player=player)
+    except Exception as e:
+        print(f"[YouTube] ⚠️ Playwright failed ({e}), fallback to _open_url")
+        _open_url(video_url)
+
+    return f"Playing: {query}"
 
 
 def _handle_summarize(parameters: dict, player, speak) -> str:
@@ -404,6 +571,7 @@ _ACTION_MAP = {
     "summarize": _handle_summarize,
     "get_info":  _handle_get_info,
     "trending":  _handle_trending,
+    "control":   _handle_control,
 }
 
 
@@ -429,7 +597,7 @@ def youtube_video(
         )
 
     try:
-        if action == "play":
+        if action in ("play", "control"):
             return handler(params, player) or "Done."
         return handler(params, player, speak) or "Done."
     except Exception as e:

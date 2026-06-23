@@ -82,7 +82,7 @@ _IMG_MAX_H = 360
 _JPEG_Q    = 60
 
 _SYSTEM_PROMPT = (
-    "You are JARVIS, an advanced AI assistant. "
+    "You are ORION, an advanced AI assistant. "
     "Analyze the provided image with precision and intelligence. "
     "Be concise and direct — maximum two sentences unless the user's question "
     "requires more detail. "
@@ -171,24 +171,68 @@ def _get_camera_index() -> int:
     return _detect_camera_index()
 
 
+_CAMERA_APP_PROCS = ["WindowsCamera.exe", "Microsoft.WindowsCamera.exe", "camera.exe"]
+
+
+def _kill_camera_apps() -> bool:
+    """Kill any Windows Camera app processes so OpenCV can access the webcam."""
+    import subprocess
+    killed = False
+    for proc in _CAMERA_APP_PROCS:
+        r = subprocess.run(
+            ["taskkill", "/F", "/IM", proc],
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0:
+            print(f"[Vision] [kill] Terminated {proc} to free webcam")
+            killed = True
+    return killed
+
+
+def _try_capture(index: int, backend: int, warmup: int) -> tuple[bool, object]:
+    """Open camera, warm up, read one frame. Returns (success, frame)."""
+    cap = cv2.VideoCapture(index, backend)
+    if not cap.isOpened():
+        cap.release()
+        return False, None
+    for _ in range(warmup):
+        cap.read()
+    ret, frame = cap.read()
+    cap.release()
+    return ret, frame
+
+
 def _capture_camera() -> tuple[bytes, str]:
     if not _CV2:
         raise RuntimeError("OpenCV (cv2) is not installed. Run: pip install opencv-python")
 
     index   = _get_camera_index()
     backend = _cv2_backend()
-    cap     = cv2.VideoCapture(index, backend)
 
-    if not cap.isOpened():
-        raise RuntimeError(f"Camera index {index} could not be opened.")
+    # Try to capture; if black, kill Camera apps and retry up to 2 times
+    frame = None
+    for attempt in range(3):
+        ret, frame = _try_capture(index, backend, warmup=20)
+        if ret and frame is not None and np.mean(frame) > 5:
+            break  # good frame
+        if attempt == 0:
+            # First failure — try killing competing Camera apps and wait
+            killed = _kill_camera_apps()
+            wait = 2.5 if killed else 1.5
+            print(f"[Vision] ⏳ Waiting {wait}s for webcam to free up...")
+            time.sleep(wait)
+        elif attempt == 1:
+            # Still bad — try re-detecting the camera index
+            print("[Vision] 🔄 Re-detecting camera index...")
+            index = _detect_camera_index()
+            time.sleep(1.5)
+        else:
+            raise RuntimeError(
+                "Camera image is completely black after 3 attempts. "
+                "Check that the webcam is connected and no other app is using it."
+            )
 
-    for _ in range(10):
-        cap.read()
-
-    ret, frame = cap.read()
-    cap.release()
-
-    if not ret or frame is None:
+    if frame is None or not ret:
         raise RuntimeError("Camera returned no frame.")
 
     if _PIL:

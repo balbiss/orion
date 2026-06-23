@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>JARVIS</title>
+  <title>ORION</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:     #07090f;
-      --card:   rgba(255,255,255,0.04);
-      --border: rgba(255,255,255,0.08);
-      --accent: #6366f1;
-      --adim:   rgba(99,102,241,0.15);
-      --text:   #dde3ed;
-      --muted:  #5e6a7e;
+      --bg:     #05000f;
+      --card:   rgba(168,85,247,0.06);
+      --border: rgba(168,85,247,0.18);
+      --accent: #a855f7;
+      --adim:   rgba(168,85,247,0.15);
+      --text:   #e9d5ff;
+      --muted:  #7c3aed;
     }
     html, body {
       height: 100%;
@@ -134,17 +134,17 @@
 </head>
 <body>
   <div class="card" id="card">
-    <div class="logo"><em>J</em>ARVIS</div>
-    <div class="sub">Remote Access</div>
-    <p id="reconnecting">Reconnecting…</p>
-    <p class="hint">Press <strong style="color:var(--text)">Remote Control</strong> in the JARVIS desktop app to get a QR code or session key.</p>
+    <div class="logo"><em>O</em>RION</div>
+    <div class="sub">Acesso Remoto</div>
+    <p id="reconnecting">Reconectando…</p>
+    <p class="hint">Pressione <strong style="color:var(--text)">Controle Remoto</strong> no app ORION do computador para obter o QR code ou a chave de acesso.</p>
     <div class="key-wrap">
       <input class="key-input" id="key" type="text" maxlength="6"
              autocomplete="off" autocorrect="off" spellcheck="false"
              placeholder="· · · · · ·">
     </div>
     <div class="err" id="err"></div>
-    <button class="btn" onclick="doLogin()">CONNECT</button>
+    <button class="btn" onclick="doLogin()">CONECTAR</button>
     <p class="voice-note">
       🎤 <strong style="color:var(--text)">Voice commands:</strong> open
       <code>chrome://flags</code> on your phone, search

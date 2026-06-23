@@ -328,5 +328,22 @@ def reminder(
     if player:
         player.write_log(f"[Reminder] ✅ {date_str} {time_str} — {safe_msg[:40]}")
 
+    # Also save to quick_notes JSON so the voice notification fires
+    try:
+        from actions.quick_notes import _load, _save
+        import uuid
+        notes = _load()
+        notes.append({
+            "id":         str(uuid.uuid4())[:8],
+            "text":       safe_msg,
+            "date":       date_str,
+            "time":       time_str,
+            "created_at": datetime.now().isoformat(),
+            "notified":   False,
+        })
+        _save(notes)
+    except Exception as e:
+        print(f"[Reminder] Could not mirror to quick_notes: {e}")
+
     friendly_time = target_dt.strftime("%B %d at %I:%M %p")
     return f"Reminder set for {friendly_time}."

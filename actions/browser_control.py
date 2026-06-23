@@ -561,7 +561,14 @@ class _BrowserSession:
             "yandex":     "https://yandex.com/search/?text=",
         }
         base = _engines.get(engine.lower(), _engines["google"])
-        return await self.go_to(base + query.replace(" ", "+"))
+        url = base + query.replace(" ", "+")
+        # If YouTube is currently playing, open search in a new tab to avoid interrupting it
+        if self._page and not self._page.is_closed():
+            current_url = self._page.url or ""
+            if "youtube.com/watch" in current_url:
+                await self.new_tab(url)
+                return f"Opened search in new tab (YouTube kept active): {query}"
+        return await self.go_to(url)
 
     async def click(self, selector: str = None, text: str = None) -> str:
         page = await self._get_page()
@@ -739,7 +746,7 @@ class _SessionRegistry:
 
     def __init__(self):
         self._sessions:       dict[str, _BrowserSession] = {}
-        self._active_browser: str                        = ""
+        self._active_browser: str                        = "chrome"
         self._lock            = threading.Lock()
 
     def _get_or_create(self, browser_name: str) -> _BrowserSession:
@@ -824,6 +831,16 @@ def browser_control(
         return result
 
     if action == "close_all":
+        # Check if YouTube is playing in any session before closing all
+        for _bname, _bsess in list(_registry._sessions.items()):
+            try:
+                _url = _bsess._page.url if (_bsess._page and not _bsess._page.is_closed()) else ""
+            except Exception:
+                _url = ""
+            if "youtube.com/watch" in _url:
+                result = f"Cannot close all — YouTube is playing in {_bname}. Close the YouTube tab first."
+                _log(player, result)
+                return result
         result = _registry.close_all()
         _log(player, result)
         return result
@@ -873,6 +890,17 @@ def browser_control(
             result = sess.run(sess.reload())
         elif action == "close":
             target = browser or _registry._active_browser
+            # Protect YouTube: don't close the browser if a YouTube video is playing in it
+            if target and target in _registry._sessions:
+                _sess = _registry._sessions[target]
+                try:
+                    current_url = _sess._page.url if (_sess._page and not _sess._page.is_closed()) else ""
+                except Exception:
+                    current_url = ""
+                if "youtube.com/watch" in current_url:
+                    result = "Cannot close browser — YouTube is currently playing. Use youtube_video control=close to close the YouTube tab."
+                    _log(player, result)
+                    return result
             result = _registry.close_one(target) if target else "No browser specified."
         else:
             result = f"Unknown browser action: '{action}'"
